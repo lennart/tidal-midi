@@ -19,6 +19,7 @@ library
   Exposed-modules: Sound.Tidal.MIDI.Output
                    Sound.Tidal.MIDI.Device
                    Sound.Tidal.MIDI.Control
+                   Sound.Tidal.PlainMIDI
                    Sound.Tidal.SimpleSynth
                    Sound.Tidal.VolcaKeys
                    Sound.Tidal.VolcaBass
