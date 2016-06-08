@@ -1,6 +1,8 @@
 module Sound.Tidal.MIDI.Control where
 
 import qualified Sound.Tidal.Stream as S
+import Sound.Tidal.Tempo(Tempo(Tempo, cps))
+import qualified Data.Map.Strict as Map
 
 import Sound.Tidal.Params
 
@@ -31,15 +33,37 @@ data ControllerShape = ControllerShape {
   latency :: Double
   }
 
+midiShape = S.Shape {
+  S.params = [     
+     dur_p,
+     n_p,
+     nudge_p,
+     velocity_p,     
+     unit_p
+     ],
+  S.latency = 0,
+  S.cpsStamp = False
+  }
 
+computeTiming :: Tempo -> Double -> Double -> S.ParamMap -> ((Int,Int,Double), Double)
+computeTiming tempo on dur note = ((n', v', d'), nudge')
+  where
+    note' = Map.mapMaybe (id) $ note
+    unit = S.svalue $ note' Map.! unit_p    
+    v' = mapRange (0, 127) $ S.fvalue $ note' Map.! velocity_p
+    n' = S.ivalue $  note' Map.! n_p
+    d' = case unit of
+      "rate" -> S.fvalue $ note' Map.! dur_p
+      "cycle" -> dur
+
+    nudge' = S.fvalue $ note' Map.! nudge_p
+    
 toShape :: ControllerShape -> S.Shape
-toShape cs =
-  let params = [dur_p, n_p, velocity_p] ++ params'
-      params' = [param p | p <- (controls cs)]
-  in S.Shape {   S.params = params,
-                 S.cpsStamp = False,
-                 S.latency = latency cs
-             }
+toShape cs = S.Shape {
+  S.params = toParams cs,
+  S.cpsStamp = False,
+  S.latency = latency cs
+  }
 
 passThru :: (Int, Int) -> Double -> Int
 passThru (_, _) = floor -- no sanitizing of range…

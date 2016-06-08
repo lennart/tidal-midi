@@ -59,7 +59,7 @@ tetraController = ControllerShape { controls = ([
                                   mrNRPN oscmix_p 13 (0, 127) 0.5,
 
                                   mNRPN noise_p 14,
-                                  mrNRPN cutoff_p 15 (0, 164) 1,
+                                  mrNRPN cutoff_p' 15 (0, 164) 1,
                                   mNRPN resonance_p 16,
                                   mNRPN kamt_p 17,
                                   mNRPN audiomod_p 18,
@@ -77,15 +77,15 @@ tetraController = ControllerShape { controls = ([
 
                                   mNRPN vcavol_p 27,
                                   mNRPN pan_p 28,
-                                  mrNRPN gain_p 29 (0, 127) 1, -- max volume by default
+                                  mNRPN gain_p 29, -- max volume by default
 
                                   mrNRPN vamt_p 30 (0, 127) 1, -- max vca envelope amount
                                   mNRPN vvel_p 31,
                                   mNRPN vdel_p 32,
-                                  mNRPN attack_p 33,
-                                  mrNRPN decay_p 34 (0, 127) 0.5,
-                                  mrNRPN sustain_p 35 (0, 127) 0.5,
-                                  mNRPN release_p 36,
+                                  mNRPN attack_p' 33,
+                                  mrNRPN decay_p' 34 (0, 127) 0.5,
+                                  mrNRPN sustain_p' 35 (0, 127) 0.5,
+                                  mNRPN release_p' 36,
 
                                   NRPN lfo1rate_p 37 (0, 166) 0 passThru, -- unsynced
                                   -- mrNRPN lfo1step_p 37 (151, 166) 0, -- (bpm / 32) - 16 bpm-cycles
@@ -182,6 +182,7 @@ tetraController = ControllerShape { controls = ([
                                   NRPN mcr3_p 107 (0, 183) 0 passThru,
                                   NRPN mcr4_p 108 (0, 183) 0 passThru,
 
+                                  
                                   mNRPN shape_p 110,
 
                                   mrNRPN btnfreq_p 111 (0, 127) 0.25,
@@ -191,7 +192,7 @@ tetraController = ControllerShape { controls = ([
                                   mNRPN pitch1_p 114,
                                   mNRPN pitch2_p 115,
 
-                                  mNRPN gain_p 116,
+                                  mNRPN fbvol_p 116,
 
                                   -- left out: editor byte,
 
@@ -202,7 +203,7 @@ tetraController = ControllerShape { controls = ([
                                   mCC damp_p 64
 
                           ] ++ makeSeqTracks),
-                         latency = 0.04
+                         latency = 0.2
                        }
 
 tetra = toShape tetraController
@@ -213,46 +214,50 @@ tetra = toShape tetraController
 
 
 (osc1freq, osc1freq_p)      = pF "osc1freq" (Just 0)
-(osc1detune, osc1detune_p)      = pF "osc1detune" (Just 0)
-(osc1shape, osc1shape_p)     = pF "osc1shape" (Just 0)
+(osc1detune, osc1detune_p)      = pF "osc1detune" (Just 0.5)
+(osc1shape, osc1shape_p)     = pI "osc1shape" (Just 1)
 (osc1glide, osc1glide_p)     = pF "osc1glide" (Just 0)
-(osc1kbd, osc1kbd_p)     = pF "osc1kbd" (Just 0)
+(osc1kbd, osc1kbd_p)     = pI "osc1kbd" (Just 1)
 
 (osc2freq, osc2freq_p)      = pF "osc2freq" (Just 0)
-(osc2detune, osc2detune_p)      = pF "osc2detune" (Just 0)
-(osc2shape, osc2shape_p)     = pF "osc2shape" (Just 0)
+(osc2detune, osc2detune_p)      = pF "osc2detune" (Just 0.5)
+(osc2shape, osc2shape_p)     = pI "osc2shape" (Just 1)
 (osc2glide, osc2glide_p)     = pF "osc2glide" (Just 0)
-(osc2kbd, osc2kbd_p)     = pF "osc2kbd" (Just 0)
+(osc2kbd, osc2kbd_p)     = pI "osc2kbd" (Just 1)
 
 (oscsync, oscsync_p)     = pF "oscsync" (Just 0)
-(glidemode, glidemode_p)     = pF "glidemode" (Just 0)
+(glidemode, glidemode_p)     = pI "glidemode" (Just 0)
 (oscslop, oscslop_p)     = pF "oscslop" (Just 0)
-(oscmix, oscmix_p)      = pF "oscmix" (Just 0)
+(oscmix, oscmix_p)      = pF "oscmix" (Just 0.5)
 
 (noise, noise_p)     = pF "noise" (Just 0)
 
-(kresonance, kresonance_p)      = pF "kresonance" (Just 0)
-(kamt, kamt_p)      = pF "kamt" (Just 0)
+(kamt, kamt_p)      = pF "kamt" (Just 0.5)
+
+(_, cutoff_p') = pF "cutoff" (Just 0.01)
+(_, attack_p') = pF "attack" (Just 0.12)
+(_, release_p') = pF "release" (Just 0.01)
+(_, decay_p') = pF "decay" (Just 0.5)
+(_, sustain_p') = pF "sustain" (Just 0)
+
 (audiomod, audiomod_p)      = pF "audiomod" (Just 0)
-(fpoles, fpoles_p)      = pF "fpoles" (Just 0)
+(fpoles, fpoles_p)      = pI "fpoles" (Just 0)
 twopole         = fpoles (p "0")
 fourpole        = fpoles (p "1")
 
 -- filter envelope
-(famt, famt_p) = pF "famt" (Just 0)
+(famt, famt_p) = pF "famt" (Just 0.5)
 (fvel, fvel_p)      = pF "fvel" (Just 0)
 (fdel, fdel_p)      = pF "fdel" (Just 0)
-(fatk, fatk_p)      = pF "fatk" (Just 0)
+(fatk, fatk_p)      = pF "fatk" (Just 0.01)
 (fdcy, fdcy_p)      = pF "fdcy" (Just 0)
 (fsus, fsus_p)      = pF "fsus" (Just 0)
-(frel, frel_p)      = pF "frel" (Just 0)
+(frel, frel_p)      = pF "frel" (Just 0.01)
 
 
 (vcavol, vcavol_p)      = pF "vcavol" (Just 0)
-(outspread, outspread_p)     = pF "outspread" (Just 0)
-(vol, vol_p)     = pF "vol" (Just 0)
 
-(vamt, vamt_p)      = pF "vamt" (Just 0)
+(vamt, vamt_p)      = pF "vamt" (Just 1)
 (vvel, vvel_p)      = pF "vvel" (Just 0)
 (vdel, vdel_p)      = pF "vdel" (Just 0)
 -- (vatk, vatk_p)      = pF "vatk" (Just 0)
@@ -262,40 +267,40 @@ fourpole        = fpoles (p "1")
 
 (lfo1rate, lfo1rate_p)      = pF "lfo1rate" (Just 0)
 -- lfo1step, -- lfo1step_p)      = pF "lfo1step" (Just 0)
-(lfo1shape, lfo1shape_p)     = pF "lfo1shape" (Just 0)
+(lfo1shape, lfo1shape_p)     = pI "lfo1shape" (Just 0)
 (lfo1amt, lfo1amt_p)     = pF "lfo1amt" (Just 0)
 (lfo1dest, lfo1dest_p)      = pF "lfo1dest" (Just 0)
-(lfo1sync, lfo1sync_p)      = pF "lfo1sync" (Just 0)
+(lfo1sync, lfo1sync_p)      = pI "lfo1sync" (Just 0)
 
 (lfo2rate, lfo2rate_p)      = pF "lfo2rate" (Just 0)
 -- lfo2step, -- lfo2step_p)      = pF "lfo2step" (Just 0)
-(lfo2shape, lfo2shape_p)     = pF "lfo2shape" (Just 0)
+(lfo2shape, lfo2shape_p)     = pI "lfo2shape" (Just 0)
 (lfo2amt, lfo2amt_p)     = pF "lfo2amt" (Just 0)
 (lfo2dest, lfo2dest_p)      = pF "lfo2dest" (Just 0)
-(lfo2sync, lfo2sync_p)      = pF "lfo2sync" (Just 0)
+(lfo2sync, lfo2sync_p)      = pI "lfo2sync" (Just 0)
 
 (lfo3rate, lfo3rate_p)      = pF "lfo3rate" (Just 0)
 -- lfo3step, -- lfo3step_p)      = pF "lfo3step" (Just 0)
-(lfo3shape, lfo3shape_p)     = pF "lfo3shape" (Just 0)
+(lfo3shape, lfo3shape_p)     = pI "lfo3shape" (Just 0)
 (lfo3amt, lfo3amt_p)     = pF "lfo3amt" (Just 0)
 (lfo3dest, lfo3dest_p)      = pF "lfo3dest" (Just 0)
-(lfo3sync, lfo3sync_p)      = pF "lfo3sync" (Just 0)
+(lfo3sync, lfo3sync_p)      = pI "lfo3sync" (Just 0)
 
 (lfo4rate, lfo4rate_p)      = pF "lfo4rate" (Just 0)
 -- lfo4step, -- lfo4step_p)      = pF "lfo4step" (Just 0)
-(lfo4shape, lfo4shape_p)     = pF "lfo4shape" (Just 0)
+(lfo4shape, lfo4shape_p)     = pI "lfo4shape" (Just 0)
 (lfo4amt, lfo4amt_p)     = pF "lfo4amt" (Just 0)
 (lfo4dest, lfo4dest_p)      = pF "lfo4dest" (Just 0)
-(lfo4sync, lfo4sync_p)      = pF "lfo4sync" (Just 0)
+(lfo4sync, lfo4sync_p)      = pI "lfo4sync" (Just 0)
 
 (emod, emod_p)      = pF "emod" (Just 0)
 (eamt, eamt_p)      = pF "eamt" (Just 0)
 (evel, evel_p)      = pF "evel" (Just 0)
 (edel, edel_p)      = pF "edel" (Just 0)
-(eatk, eatk_p)      = pF "eatk" (Just 0)
+(eatk, eatk_p)      = pF "eatk" (Just 0.01)
 (edcy, edcy_p)      = pF "edcy" (Just 0)
 (esus, esus_p)      = pF "esus" (Just 0)
-(erel, erel_p)      = pF "erel" (Just 0)
+(erel, erel_p)      = pF "erel" (Just 0.01)
 
 (mod1src, mod1src_p)     = pF "mod1src" (Just 0)
 (mod1amt, mod1amt_p)     = pF "mod1amt" (Just 0)
@@ -320,26 +325,26 @@ fourpole        = fpoles (p "1")
 
 
 (mwhl, mwhl_p)    = pF "mwhl" (Just 0)
-(mwhldst, mwhldst_p) = pF "mwhldst" (Just 0)
+(mwhldst, mwhldst_p) = pI "mwhldst" (Just 0)
 
 (aftt, aftt_p)    = pF "aftt" (Just 0)
-(afttdst, afttdst_p) = pF "afttdst" (Just 0)
+(afttdst, afttdst_p) = pI "afttdst" (Just 0)
 
 (breath, breath_p)    = pF "breath" (Just 0)
-(breathdst, breathdst_p) = pF "breathdst" (Just 0)
+(breathdst, breathdst_p) = pI "breathdst" (Just 0)
 
 (mvel, mvel_p)    = pF "mvel" (Just 0)
-(mveldst, mveldst_p) = pF "mveldst" (Just 0)
+(mveldst, mveldst_p) = pI "mveldst" (Just 0)
 
 (foot, foot_p)    = pF "foot" (Just 0)
-(footdst, footdst_p) = pF "footdst" (Just 0)
+(footdst, footdst_p) = pI "footdst" (Just 0)
 
-(bendrng, bendrng_p) = pF "bendrng" (Just 0)
+(bendrng, bendrng_p) = pI "bendrng" (Just 0)
 
 -- left out: modwheel, breath, footctrl, pressure, velocity
 
-(kbpm, kbpm_p)      = pF "kbpm" (Just 0)
-(clockdiv, clockdiv_p)      = pF "clockdiv" (Just 0)
+(kbpm, kbpm_p)      = pI "kbpm" (Just 0)
+(clockdiv, clockdiv_p)      = pI "clockdiv" (Just 0)
 
 -- left out: pitchbend range
 
@@ -355,10 +360,10 @@ fourpole        = fpoles (p "1")
 (arp, arp_p)     = pF "arp" (Just 0)
 (sqn, sqn_p)     = pF "sqn" (Just 0)
 
-(mcr1, mcr1_p)      = pF "mcr1" (Just 0)
-(mcr2, mcr2_p)      = pF "mcr2" (Just 0)
-(mcr3, mcr3_p)      = pF "mcr3" (Just 0)
-(mcr4, mcr4_p)      = pF "mcr4" (Just 0)
+(mcr1, mcr1_p)      = pI "mcr1" (Just 0)
+(mcr2, mcr2_p)      = pI "mcr2" (Just 0)
+(mcr3, mcr3_p)      = pI "mcr3" (Just 0)
+(mcr4, mcr4_p)      = pI "mcr4" (Just 0)
 
 (btnfreq, btnfreq_p)     = pF "btnfreq" (Just 0)
 (btnvel, btnvel_p)      = pF "btnvel" (Just 0)
@@ -439,7 +444,6 @@ dlfo2a = doublePattern 20
 dlfo3a = doublePattern 21
 dlfo4a = doublePattern 22
 dlfoa = doublePattern 23
-
 dfamt = doublePattern 24
 dvamt = doublePattern 25
 deamt = doublePattern 26
@@ -477,7 +481,6 @@ sseq1 = doublePattern 1
 sseq2 = doublePattern 2
 sseq3 = doublePattern 3
 sseq4 = doublePattern 4
-
 slfo1 = doublePattern 5
 slfo2 = doublePattern 6
 slfo3 = doublePattern 7
@@ -501,8 +504,8 @@ snoise = doublePattern 20
 
 
 snare d p' = n p'
-  |+| osc1shape zero |+| osc1kbd zero
-  |+| osc2shape zero |+| osc2kbd zero
+  |+| osc1shape (p "0") |+| osc1kbd (p "0")
+  |+| osc2shape (p "0") |+| osc2kbd (p "0")
   |+| noise one
   |+| release d |+| sustain zero |+| decay d
   |+| cutoff (p "1")
@@ -512,11 +515,11 @@ snare d p' = n p'
 
 
 kick blp p' = note p'
---  |+| fourpole
-  |+| osc1shape zero |+| osc1kbd zero
-  |+| osc2shape zero |+| osc2kbd zero
+   |+| fourpole
+  |+| osc1shape (p "0") |+| osc1kbd (p "0")
+  |+| osc2shape (p "0") |+| osc2kbd (p "0")
   |+| sustain zero |+| decay (p "0.95") |+| release (p "0.5")
-  |+| kresonance (p "0.99") |+| cutoff zero
+  |+| resonance (p "0.99") |+| cutoff zero
   |+| eamt (p "0.8") |+| emod (p "9") |+| edcy blp
   |+| dur (p "0.2")
   where zero = p "0"

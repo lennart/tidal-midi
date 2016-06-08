@@ -1,4 +1,4 @@
-module Sound.Tidal.MIDI.Stream (midiStream, midiBackend, midiState, midiSetters, midiDevices,send) where
+module Sound.Tidal.MIDI.Stream (midiStream, midiBackend, midiState, midiSetters, midiDevices,send,cutShape) where
 
 import Control.Monad.Trans.Maybe
 -- generics
@@ -14,13 +14,17 @@ import Data.Bits
 import Foreign.C
 import Control.Applicative
 
+
 import Numeric
 
 -- Tidal specific
-import Sound.Tidal.Tempo (Tempo, cps, clockedTick)
+import Sound.Tidal.Tempo (Tempo(Tempo), cps, clockedTick)
 import Sound.Tidal.Stream as S
 import Sound.Tidal.Utils
 import Sound.Tidal.Time
+import Sound.Tidal.Pattern (arc)
+
+import Data.Ratio ((%))
 import Sound.Tidal.Transition (transition)
 
 -- MIDI specific
@@ -36,6 +40,8 @@ type OutputState = (TickedConnectionCount, ConnectionCount, OutputOnline)
 type MIDITime = (Tempo, Int, Double, Double)
 type MIDIEncoder = CULong -> PM.PMEvent
 type MIDIEvent = (MIDITime, MIDIEncoder)
+type TimedNote = (CLong, CLong, Double)
+
 
 data Output = Output {
                        conn :: PM.PMStream,
@@ -59,35 +65,42 @@ toMidiEvent s p (VS x) = Nothing -- ignore strings for now, we might 'read' them
 toMidiMap :: ControllerShape -> S.ParamMap -> MidiMap
 toMidiMap s m = Map.mapWithKey (toMidiEvent s) (Map.mapMaybe (id) m)
 
-send s ch cshape shape change tick o ctrls (tdur:tnote:trest) = midi
+
+cutShape :: S.Shape -> ParamMap -> Maybe ParamMap
+cutShape s m = flip Map.intersection (S.defaultMap s) <$> S.applyShape' s m
+               
+stripDefaults m = (Map.filterWithKey (\k v -> v /= (defaultValue k))) <$> m
+
+send s ch cshape shape change tick on off ctrls note = midi
     where
-      midi = sendmidi s cshape ch' (note, vel, dur) (change, tick, o, offset) ctrls
-      note = fromIntegral $ ivalue $ snd tnote
-      dur = realToFrac $ fvalue $ snd tdur
-      (vel, nudge) = case length trest of
-        2 -> (mkMidi $ trest !! 1, fvalue $ snd $ trest !! 0)
-        1 -> (mkMidi $ trest !! 0, 0)
+      midi = sendmidi s cshape ch' note' (change, tick, on, offset) ctrls
+      (note', nudge) = computeTiming' change on off note
       ch' = fromIntegral ch
-      mkMidi = fromIntegral . floor . (*127) . fvalue . snd
       offset = ((Sound.Tidal.MIDI.Control.latency cshape) + nudge)
 
-mkSend cshape channel s = return $ (\ shape change tick (o,m) -> do
-                        let defaulted = (S.applyShape' shape m)
-                            -- split ParamMap into Properties and Controls
-                            mpartition = fmap (Map.partitionWithKey (\k _ -> (name k) `elem` ["dur", "n", "velocity", "nudge"])) defaulted
-                            props = fmap fst mpartition
-                            ctrls = fmap snd mpartition
-                            props' = fmap (Map.toAscList) $ fmap (Map.mapMaybe (id)) props
-                            -- only send explicitly set Control values
-                            ctrls' = fmap (Map.filterWithKey (\k v -> v /= (defaultValue k))) ctrls
-                            ctrls'' = fmap (toMidiMap cshape) ctrls'
-                            send' = fmap (send s channel cshape shape change tick o) ctrls''
-                        ($) <$> send' <*> props'
+mkSend cshape channel s = return $ (\ shape change tick (on,off,m) -> do
+                        let ctrls = cutShape shape m
+                            props = cutShape midiShape m
+                            ctrls' = stripDefaults ctrls
+                            ctrls'' = toMidiMap cshape <$> ctrls'
+                            send' = (send s channel cshape shape change tick on off) <$> ctrls''
+                        ($) <$> send' <*> props
                         )
 
+
+computeTiming' tempo on off note = ((fromIntegral n, fromIntegral v, d), nudge)
+  where
+    ((n,v,d), nudge) = computeTiming tempo on ((off - on)/S.ticksPerCycle) note
+
+
 connected cshape channel name s = do
+  let shape = toShape cshape
+      defaultParams = S.defaultMap shape    
+      allctrls = toMidiMap cshape defaultParams
   putStrLn ("Successfully initialized Device '" ++ name ++ "'")
   changeState goOnline s
+  now <- getCurrentTime
+  sendctrls s cshape (fromIntegral channel) (Tempo now 0 1 False 0,0,0,0) allctrls -- send all ctrls defaults to specific channel of device
   mkSend cshape channel s
 
 failed di err = do
@@ -162,16 +175,33 @@ showLate (o, t, e, m, n) =
 
 
 -- should only send out events if all connections have ticked
-flushBackend :: Output -> S.Shape -> Tempo -> Int -> IO ()
-flushBackend o shape change ticks = do
+flushBackend :: Output -> (ParamPattern, [ParamPattern]) -> S.Shape -> Tempo -> Int -> IO ()
+flushBackend o (p', (ps:xs)) shape change ticks = flushBackend' o (diffPattern ps p' ticks) shape change ticks
+flushBackend o (p', []) shape change ticks = flushBackend' o (Just $ Map.empty) shape change ticks
+flushBackend o (p', [ps]) shape change ticks = flushBackend' o (diffPattern ps p' ticks) shape change ticks
+
+
+diffPattern :: ParamPattern -> ParamPattern -> Int -> Maybe ParamMap
+diffPattern p1 p2 ticks = case length diff of
+                           0 -> Nothing
+                           _ -> Just $ diff
+  where
+    diff = Map.difference m2 m1
+    m1 = Map.unions $ map thd' $ arc p1 (a,b)
+    m2 = Map.unions $ map thd' $ arc p2 (a,b)
+    ticks' = (fromIntegral ticks) :: Integer
+    a = ticks' % ticksPerCycle
+    b = (ticks' + 1) % ticksPerCycle
+
+flushBackend' :: Output -> Maybe ParamMap -> S.Shape -> Tempo -> Int -> IO ()
+flushBackend' o diff shape change ticks = do
   changeState tickConnections o
   cycling <- readState isCycling o
-
+  maybe (pure ()) (putStrLn) $ unlines <$> (Map.elems <$> (Map.mapWithKey (\k _ -> show k)) <$> diff)
   case cycling of
     True -> do
       late <- sendevents o shape change ticks
       let len = length late
-  
       case len of
         0 ->
           return ()
@@ -266,7 +296,7 @@ sendctrls stream shape ch t ctrls = do
   sequence_ $ map (\(param, ctrl) -> makeCtrl stream ch (fromJust $ paramN shape param) (fromIntegral ctrl) t) ctrls' -- FIXME: we should be sure param has ControlChange
   return ()
 
-sendnote :: Output -> t -> CLong -> (CLong, CLong, Double) -> MIDITime -> IO ()
+sendnote :: Output -> t -> CLong -> TimedNote -> MIDITime -> IO ()
 sendnote stream shape ch (note,vel, dur) (tempo,tick,onset,offset) =
   do
     noteOn stream ch midinote vel (tempo,tick,onset,offset)
@@ -282,7 +312,7 @@ scheduleTime mnow' now' logicalOnset = t
     t = floor $ mnow + (1000 * (logicalOnset - now)) -- 1 second are 1000 microseconds as is the unit of timestamps in PortMidi
     
 
-sendmidi :: Output -> ControllerShape -> CLong -> (CLong, CLong, Double) -> MIDITime -> MidiMap -> IO ()
+sendmidi :: Output -> ControllerShape -> CLong -> TimedNote -> MIDITime -> MidiMap -> IO ()
 sendmidi stream shape ch n t ctrls = do
   sendmidi' stream shape ch n t ctrls
   return ()
