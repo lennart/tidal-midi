@@ -3,7 +3,7 @@ module Sound.Tidal.MIDI.Control where
 import qualified Sound.Tidal.Stream as S
 import Sound.Tidal.Tempo(Tempo(Tempo, cps))
 import qualified Data.Map.Strict as Map
-
+import Data.Ratio
 import Sound.Tidal.Params
 
 type RangeMapFunc = (Int, Int) -> Double -> Int
@@ -45,7 +45,7 @@ midiShape = S.Shape {
   S.cpsStamp = False
   }
 
-computeTiming :: Tempo -> Double -> Double -> S.ParamMap -> ((Int,Int,Double), Double)
+computeTiming :: Tempo -> Double -> Ratio Integer -> S.ParamMap -> ((Int,Int,Ratio Integer), Double)
 computeTiming tempo on dur note = ((n', v', d'), nudge')
   where
     note' = Map.mapMaybe (id) $ note
@@ -53,8 +53,8 @@ computeTiming tempo on dur note = ((n', v', d'), nudge')
     v' = mapRange (0, 127) $ S.fvalue $ note' Map.! velocity_p
     n' = S.ivalue $  note' Map.! n_p
     d' = case unit of
-      "rate" -> S.fvalue $ note' Map.! dur_p
-      "cycle" -> dur
+      "rate" -> realToFrac $ S.fvalue $ note' Map.! dur_p
+      "cycle" -> (/) dur $ realToFrac $ cps tempo
 
     nudge' = S.fvalue $ note' Map.! nudge_p
     
