@@ -1,9 +1,9 @@
-module Sound.Tidal.MIDI.Stream (midiStream, midiBackend, midiState, midiSetters, midiDevices,send,cutShape) where
+module Sound.Tidal.MIDI.Stream (midiStream, midiBackend, midiState, midiSetters, midiDevices,store,cutShape) where
 
 import Control.Monad.Trans.Maybe
 -- generics
 import qualified Data.Map as Map
-import Data.List (sortBy)
+import Data.List (sortBy, find, partition, elemIndex)
 import Data.Maybe
 import Data.Ord (comparing)
 import Data.Time (getCurrentTime, UTCTime, diffUTCTime)
@@ -13,7 +13,6 @@ import Control.Concurrent.MVar
 import Data.Bits
 import Foreign.C
 import Control.Applicative
-
 
 import Numeric
 
@@ -36,34 +35,39 @@ import qualified Sound.PortMidi as PM
 type ConnectionCount = Int
 type TickedConnectionCount = Int
 type OutputOnline = Bool
-type OutputState = (TickedConnectionCount, ConnectionCount, OutputOnline)
+type OutputState = (TickedConnectionCount, ConnectionCount, ParamMap, OutputOnline)
 type MIDITime = (Tempo, Int, Double, Double)
 type MIDIEncoder = CULong -> PM.PMEvent
-type MIDIEvent = (MIDITime, MIDIEncoder)
+type MIDIEvent = (MIDITime, MIDIMessage)
+type MIDIChannel = CLong
+type MIDIStatus = CLong
+type MIDIDatum = CLong
+type MIDIMessage = (MIDIChannel, MIDIStatus, MIDIDatum, MIDIDatum)
 type TimedNote = (CLong, CLong, Double)
 
 
 data Output = Output {
-                       conn :: PM.PMStream,
-                       buffer :: MVar [MIDIEvent],
-                       bufferstate :: MVar OutputState
-                     }
+  cshape :: ControllerShape,
+  conn :: PM.PMStream,
+  buffer :: MVar (ParamMap, [MIDIEvent]),
+  bufferstate :: MVar OutputState
+  }
 
 type MidiMap = Map.Map S.Param (Maybe Int)
 type MidiDeviceMap = Map.Map String Output
 
 
-toMidiEvent :: ControllerShape -> S.Param -> Value -> Maybe Int
-toMidiEvent s p (VF x) = ($) <$> mscale <*> mrange <*> pure x
+toMidiValue :: ControllerShape -> S.Param -> Value -> Maybe Int
+toMidiValue s p (VF x) = ($) <$> mscale <*> mrange <*> pure x
     where
       mrange = fmap range mcc
       mscale = fmap scalef mcc
       mcc = paramN s p
-toMidiEvent s p (VI x) = Just x
-toMidiEvent s p (VS x) = Nothing -- ignore strings for now, we might 'read' them later
+toMidiValue s p (VI x) = Just x
+toMidiValue s p (VS x) = Nothing -- ignore strings for now, we might 'read' them later
 
 toMidiMap :: ControllerShape -> S.ParamMap -> MidiMap
-toMidiMap s m = Map.mapWithKey (toMidiEvent s) (Map.mapMaybe (id) m)
+toMidiMap s m = Map.mapWithKey (toMidiValue s) (Map.mapMaybe (id) m)
 
 
 cutShape :: S.Shape -> ParamMap -> Maybe ParamMap
@@ -71,22 +75,32 @@ cutShape s m = flip Map.intersection (S.defaultMap s) <$> S.applyShape' s m
                
 stripDefaults m = (Map.filterWithKey (\k v -> v /= (defaultValue k))) <$> m
 
-send s ch cshape shape change tick on off ctrls note = midi
+store s ch cshape shape change tick on off ctrls note = midi
     where
-      midi = sendmidi s cshape ch' note' (change, tick, on, offset) ctrls
+      midi = storemidi s cshape ch' note' (change, tick, on, offset) ctrls -- this line would have to storeparams as well...otherwise nothing gets executed
       (note', nudge) = computeTiming' change on off note
       ch' = fromIntegral ch
       offset = ((Sound.Tidal.MIDI.Control.latency cshape) + nudge)
 
-mkSend cshape channel s = return $ (\ shape change tick (on,off,m) -> do
+mkStore cshape channel s = return $ (\ shape change tick (on,off,m) -> do
                         let ctrls = cutShape shape m
                             props = cutShape midiShape m
                             ctrls' = stripDefaults ctrls
                             ctrls'' = toMidiMap cshape <$> ctrls'
-                            send' = (send s channel cshape shape change tick on off) <$> ctrls''
-                        ($) <$> send' <*> props
+                            store' = (store s channel cshape shape change tick on off) <$> ctrls''
+                        -- store ParamMap with _all_ possible params (notes might not send CCs but need to reset some)
+
+                        fmap ($) ((storeParams s) <$> (stripDefaults $ applyShape' shape m)) <*> (($) <$> store' <*> props)
                         )
 
+-- this will union the currently stored paramstate with the given one
+storeParams :: Output -> ParamMap -> IO () -> IO ()
+storeParams o m action = do
+  modifyMVar_ (buffer o) $ \(state, events) -> do
+    let state' = Map.union m state
+    return (state', events)
+  action
+    
 
 computeTiming' tempo on off note = ((fromIntegral n, fromIntegral v, d), nudge)
   where
@@ -100,8 +114,8 @@ connected cshape channel name s = do
   putStrLn ("Successfully initialized Device '" ++ name ++ "'")
   changeState goOnline s
   now <- getCurrentTime
-  sendctrls s cshape (fromIntegral channel) (Tempo now 0 1 False 0,0,0,0) allctrls -- send all ctrls defaults to specific channel of device
-  mkSend cshape channel s
+  storeevents s $ makectrls s (fromIntegral channel) (Tempo now 0 1 False 0,0,0,0) allctrls -- send all ctrls defaults to specific channel of device
+  mkStore cshape channel s
 
 failed di err = do
   error (show err ++ ": " ++ show di)
@@ -114,27 +128,39 @@ notfound name = do
 readState f o = do
   s <- readMVar $ bufferstate o
   let fs = f s
-      (ticked, conns, online) = s
+      (ticked, conns, paramstate, online) = s
   return fs
 
-isCycling (0, conns, True) = True
+isCycling (0, conns, _, True) = True
 isCycling _ = False
 
-displayState (ticked, conns, online) = show ticked ++ "/" ++ show conns ++ "[" ++ show online ++ "]"
+displayState (ticked, conns, paramstate, online) = show ticked ++ "/" ++ show conns ++ "[" ++ show online ++ "]" ++ " active params: " ++ show paramstate
 
 changeState f o = do
   bs <- takeMVar stateM
   let fs = f bs
-      (ticked, conns, online) = fs      
+      (ticked, conns, paramstate, online) = fs      
   putMVar stateM $ fs
     where
       stateM = bufferstate o
 
-goOnline (ticked, conns, online) = (ticked, conns, True)
-addConnection (ticked, conns, online) = (ticked, conns + 1, online)
-tickConnections (ticked, conns, online) = ((ticked + 1) `mod` conns, conns, online)
+changeState' f o = do
+  bs <- takeMVar stateM
+  let fs = f bs
+  putMVar stateM $ fs
+  return (fs, bs)
+    where
+      stateM = bufferstate o
 
-useOutput outsM name lat = do
+resetParamState newstate currentstate@(ticked, conns, paramstate, online)
+  | Map.empty == newstate = currentstate -- updating with an empty state is a noop
+  | otherwise = (ticked, conns, newstate, online)
+
+goOnline (ticked, conns, paramstate, online) = (ticked, conns, paramstate, True)
+addConnection (ticked, conns, paramstate, online) = (ticked, conns + 1, paramstate, online)
+tickConnections (ticked, conns, paramstate, online) = ((ticked + 1) `mod` conns, conns, paramstate, online)
+
+useOutput outsM name lat cshape = do
   outs <- readMVar outsM -- blocks
   let outM = Map.lookup name outs -- maybe
   -- if we have a valid output by now, return
@@ -146,7 +172,7 @@ useOutput outsM name lat = do
     Nothing -> do
       -- otherwise open a new output and store the result in the mvar
       devidM <- (>>= maybe (failed name "Failed opening MIDI Output Device ID") return) (getIDForDeviceName name)
-      econn <- outputDevice devidM lat  -- either
+      econn <- outputDevice devidM lat cshape  -- either
       case econn of
         Left o -> do
           changeState addConnection o
@@ -156,7 +182,7 @@ useOutput outsM name lat = do
 
 makeConnection :: MVar (MidiDeviceMap) -> String -> Int -> ControllerShape -> IO ((S.ToMessageFunc), Output)
 makeConnection devicesM deviceName channel cshape = do
-  moutput <- useOutput devicesM deviceName 1
+  moutput <- useOutput devicesM deviceName 1 cshape
   case moutput of
     Just o -> do
       s <- connected cshape channel deviceName o
@@ -173,34 +199,39 @@ showLate (o, t, e, m, n) =
            "onset (relative): ", show $ showFFloat (Just 3) (t - (realToFrac $ utcTimeToPOSIXSeconds n)) "",
            ", sched: ", show $ PM.timestamp e]
 
-
 -- should only send out events if all connections have ticked
-flushBackend :: Output -> (ParamPattern, [ParamPattern]) -> S.Shape -> Tempo -> Int -> IO ()
-flushBackend o (p', (ps:xs)) shape change ticks = flushBackend' o (diffPattern ps p' ticks) shape change ticks
-flushBackend o (p', []) shape change ticks = flushBackend' o (Just $ Map.empty) shape change ticks
-flushBackend o (p', [ps]) shape change ticks = flushBackend' o (diffPattern ps p' ticks) shape change ticks
-
-
-diffPattern :: ParamPattern -> ParamPattern -> Int -> Maybe ParamMap
-diffPattern p1 p2 ticks = case length diff of
-                           0 -> Nothing
-                           _ -> Just $ diff
-  where
-    diff = Map.difference m2 m1
-    m1 = Map.unions $ map thd' $ arc p1 (a,b)
-    m2 = Map.unions $ map thd' $ arc p2 (a,b)
-    ticks' = (fromIntegral ticks) :: Integer
-    a = ticks' % ticksPerCycle
-    b = (ticks' + 1) % ticksPerCycle
-
-flushBackend' :: Output -> Maybe ParamMap -> S.Shape -> Tempo -> Int -> IO ()
-flushBackend' o diff shape change ticks = do
+flushBackend :: Output -> S.Shape -> Tempo -> Int -> IO ()
+flushBackend o shape change ticks = do
   changeState tickConnections o
   cycling <- readState isCycling o
-  maybe (pure ()) (putStrLn) $ unlines <$> (Map.elems <$> (Map.mapWithKey (\k _ -> show k)) <$> diff)
+
   case cycling of
-    True -> do
-      late <- sendevents o shape change ticks
+    True -> do      
+      -- gather last sent params, update state with new
+      let bs = bufferstate o
+          buf = buffer o
+          lat = S.latency shape
+      (state, events) <- takeMVar buf
+
+      ((_,_,newstate,_), (_,_,oldstate,_)) <- changeState' (resetParamState state) o
+           
+      -- find params that were removed
+      let diff = Map.mapWithKey (\k v -> defaultValue k) $ Map.difference oldstate newstate      
+
+      -- store additional "reset" events in buffer
+-- schedule time must be exactly before/ontime with the next regular event to be sent. otherwise we risk
+-- mixing order of ctrl messages, and resets get override
+-- FIXME: when schedulin, note late CC messages and DROP THEM, otherwise everything is screwed
+      let offset = S.latency shape
+          resetevents = makectrls o 1 (change,ticks,1,offset) (toMidiMap (cshape o) diff) -- FIXME: hardcoded channel 1
+
+      maybe (pure ()) (putStrLn) (case length resetevents of
+                                   0 -> Nothing
+                                   _ -> Just $ show $ length resetevents)
+      -- send out MIDI events
+      (late, later) <- sendevents o shape change ticks events resetevents
+      -- finally clear buffered ParamMap for next tick
+      putMVar buf (Map.empty, later)
       let len = length late
       case len of
         0 ->
@@ -209,10 +240,8 @@ flushBackend' o diff shape change ticks = do
           putStrLn $ showLate $ head late
           putStrLn $ "and " ++ show (len - 1) ++ " more"
     False -> do
-      s <- readState displayState o
-      
       return ()
-      
+
 
 midiDevices :: IO (MVar (MidiDeviceMap))
 midiDevices = do
@@ -248,61 +277,77 @@ showEvent e = show t ++ " " ++ show msg
 showRawEvent :: (CULong, MIDITime, Double, PM.PMEvent) -> String
 showRawEvent (midionset, (tempo,tick,onset,offset), logicalOnset, e) = show onset ++ " " ++ " / " ++ show logicalOnset ++ " " ++  showEvent e
 
-sendevents :: Output -> S.Shape -> Tempo -> Int -> IO ([(CULong, Double, PM.PMEvent, CULong, UTCTime)])
-sendevents stream shape change ticks = do
-  let buf = buffer stream
-      output = conn stream
-  buf' <- tryTakeMVar buf
-  case buf' of
-    Nothing -> do
-      return []
-    Just [] -> do
-      -- make sure we put back an empty buffer
-      putMVar buf []
-      return []
-    (Just evts@(x:xs)) -> do
-          midiTime <- PM.time
-          now <- getCurrentTime
+sendevents :: Output -> S.Shape -> Tempo -> Int -> [MIDIEvent] -> [MIDIEvent] -> IO (([(CULong, Double, PM.PMEvent, CULong, UTCTime)], [MIDIEvent]))
+sendevents stream shape change ticks [] [] = return ([],[])
+sendevents stream shape change ticks evts resets = do
+  -- assumptions:
+  -- all reset events have the same timestamp
+  -- questions:      
+  -- could there be any events in `evts` at all that need reset? or are these just in late from the last tick?
+  let output = conn stream
+  midiTime <- PM.time
+  now <- getCurrentTime
+  let offset = S.latency shape
+      nextTick = logicalOnset' change (ticks+1) 0 offset
+      onsets = map calcOnsets evts
+      -- calculate temporary scheduling for resetevts
+      resetevts = map calcOnsets resets
+      -- split into events sent now and later (e.g. a noteOff that would otherwise cut off noteOn's in the next tick)
+      (evts', later) = span ((< nextTick).(\(_,o,_) -> o)) $ sortBy (comparing (\(_,o,_) -> o)) onsets
+      -- calculate MIDI time to schedule events, putting time into fn to create PM.PMEvents
+      evts'' = map (\(t, o, e) -> let midionset = scheduleTime midiTime now o
+                                  in (midionset, t, o, makeRawEvent e midionset)) evts'
+      -- a list CC `names` that need to be reset
+      resetccs = map (\(t, o, (ch, st, d1, d2)) -> d1) resetevts
+      later' = map (\(t,o,e) -> (t,e)) later
+      evts''' = map (\(_,_,_,e) -> e) evts''
+      findCC match list = find (\(t, o, (ch, st, d1, d2)) -> st == 0xB0 && (d1 `elem` match)) $ reverse list
+
+
+      -- FIXME: this does not sort correctly in the end
+      -- 1. find the ccs that needs reset (search in `later` then in `evts`)
+      (evtstosend, laterevts) = case findCC resetccs later of
+        Nothing -> case findCC resetccs evts' of
+          -- 1c. no events at all need to be reset
+          --      1cI. use the default passed in midionset for resets
+          --      1cII. append `resets` to `evts` FIXME: make sure we really do by timing
+          --      1cIII. send `evts`
+          Nothing -> (evts'' ++ (map (\(t, o, e) -> let midionset = scheduleTime midiTime now o
+                                                    in (midionset, t, o, makeRawEvent e midionset)) $ resetevts), later')
+          -- 1b. only `evts` contain a CC to be reset
+          --      1bI. set scheduletime for reset __after__ the latest CC that needs to be reset in `evts`
+          --      1bII. add `resets` to `evts`
+          --      1bIII. send `evts`                
+          Just l@(lt, latestO, le) -> (before ++
+                                      (map (
+                                          \(t, o, e) ->
+                                          let midionset = scheduleTime midiTime now latestO
+                                          in (midionset, t,o,makeRawEvent e midionset)
+                                          ) $ resetevts
+                                      ) ++ after, later')
+            where
+              (before, after) = partition (\(m,t,o,e) -> m > (scheduleTime midiTime now o)) evts''
           
-          let offset = S.latency shape
-              nextTick = logicalOnset' change (ticks+1) 0 offset
-              onsets = map calcOnsets evts
-              -- split into events sent now and later (e.g. a noteOff that would otherwise cut off noteOn's in the next tick)
-              (evts', later) = span ((< nextTick).(\(_,o,_) -> o)) $ sortBy (comparing (\(_,o,_) -> o)) onsets
-              -- calculate MIDI time to schedule events, putting time into fn to create PM.PMEvents
-              evts'' = map (\(t, o, e) -> let midionset = scheduleTime midiTime now o
-                                         in (midionset, t, o, e midionset)) evts'
-              later' = map (\(t,o,e) -> (t,e)) later
-              evts''' = map (\(_,_,_,e) -> e) evts''
-              -- filter events that are too late
-              late = map (toDescriptor midiTime now) $ filter (\(_,_,t,_) -> t < (realToFrac $ utcTimeToPOSIXSeconds now)) $ evts''
+        -- 1a. `later` contains a cc to be reset, (omit searching in evts)
+        --      1aI. set scheduletime for reset __after__ the latest CC that needs to be reset in `later`
+        --      1aII. add `resetevts` to `later`
+        --      1aIII. send `evts`                
+        Just (latestT, _, _) -> (evts'', later' ++ (map (\(t, _, e) -> (latestT, e)) $ resetevts))
+      evtstosend' = map (\(_,_,_,e) -> e) evtstosend
+      -- filter events that are too late
+      late = map (toDescriptor midiTime now) $ filter (\(_,_,t,_) -> t < (realToFrac $ utcTimeToPOSIXSeconds now)) $ evtstosend
 
-          -- write events for this tick to stream
-          err <- PM.writeEvents output evts'''
-          -- store later events for nextTick
-          putMVar buf later'
-          case err of
-            PM.NoError -> do
-              -- return events for logging in outer scope
-              return late
-            e -> do
-              putStrLn "sending failed"
-              return []
+  -- write events for this tick to stream
+  err <- PM.writeEvents output evtstosend'
+--  putStrLn $ unlines $ map showRawEvent evtstosend
+  case err of
+   PM.NoError -> do
+     -- return events for logging in outer scope
+     return (late, laterevts)
+   e -> do
+     putStrLn "sending failed"
+     return (late, laterevts)
 
-
-sendctrls  :: Output -> ControllerShape -> CLong -> MIDITime -> MidiMap -> IO ()
-sendctrls stream shape ch t ctrls = do
-  let ctrls' = filter ((>=0) . snd) $ Map.toList $ Map.mapMaybe (id) ctrls
-  sequence_ $ map (\(param, ctrl) -> makeCtrl stream ch (fromJust $ paramN shape param) (fromIntegral ctrl) t) ctrls' -- FIXME: we should be sure param has ControlChange
-  return ()
-
-sendnote :: Output -> t -> CLong -> TimedNote -> MIDITime -> IO ()
-sendnote stream shape ch (note,vel, dur) (tempo,tick,onset,offset) =
-  do
-    noteOn stream ch midinote vel (tempo,tick,onset,offset)
-    noteOff stream ch midinote (tempo, tick, onset, offset + dur)
-    return ()
-  where midinote = note + 60
 
 scheduleTime :: CULong -> UTCTime -> Double -> CULong
 scheduleTime mnow' now' logicalOnset = t
@@ -310,21 +355,56 @@ scheduleTime mnow' now' logicalOnset = t
     now = realToFrac $ utcTimeToPOSIXSeconds $ now'
     mnow = fromIntegral mnow'
     t = floor $ mnow + (1000 * (logicalOnset - now)) -- 1 second are 1000 microseconds as is the unit of timestamps in PortMidi
-    
 
-sendmidi :: Output -> ControllerShape -> CLong -> TimedNote -> MIDITime -> MidiMap -> IO ()
-sendmidi stream shape ch n t ctrls = do
-  sendmidi' stream shape ch n t ctrls
+
+-- Event creation
+
+-- FIXME: throws if param cannot be found
+makectrls :: Output -> CLong -> MIDITime -> MidiMap -> [MIDIEvent]
+makectrls o ch t ctrls = concatMap (\(param, ctrl) -> makeCtrl ch (fromJust $ paramN shape param) (fromIntegral ctrl) t) ctrls'
+  where
+    shape = cshape o
+    ctrls' = filter ((>=0) . snd) $ Map.toList $ Map.mapMaybe (id) ctrls
+
+makenote :: CLong -> TimedNote -> MIDITime -> [MIDIEvent]
+makenote ch (note,vel,dur) (tempo,tick,onset,offset) = noteon' ++ noteoff'
+  where
+    noteon' = noteOn ch midinote vel (tempo,tick,onset,offset)
+    noteoff' = noteOff ch midinote (tempo,tick,onset,offset + dur)
+    midinote = note + 60
+
+makemidi :: Output -> CLong -> TimedNote -> MIDITime -> MidiMap -> [MIDIEvent]
+makemidi o ch (128,vel,dur) t ctrls = (makectrls o ch t ctrls) -- HACK: to send only CC use (n + 60) == 128
+makemidi o ch note t ctrls = (makectrls o ch t ctrls) ++ (makenote ch note t)
+
+-- Event buffering
+storemidi :: Output -> ControllerShape -> CLong -> TimedNote -> MIDITime -> MidiMap -> IO ()
+storemidi o shape ch n t ctrls = do
+  storeevents o $ makemidi o ch n t ctrls
   return ()
 
 
-sendmidi' stream shape ch (128,vel,dur) t ctrls = do
-  sendctrls stream shape ch t ctrls
-  return ()
-sendmidi' stream shape ch (note,vel,dur) t ctrls = do
-  sendnote stream shape ch (note,vel,dur) t
-  sendctrls stream shape ch t ctrls
-  return ()
+-- MIDI Event wrapping
+makeEvent :: CLong -> CLong -> CLong -> CLong -> MIDITime -> MIDIEvent
+makeEvent st n ch v t = (t, msg)
+  where
+    msg = (ch, st, n, v)
+
+--encodeEvent :: MIDITime -> (CULong -> PM.PMEvent) -> MIDIEvent
+--encodeEvent t e = (t, \t' -> e t')
+
+makeRawEvent :: MIDIMessage -> CULong -> PM.PMEvent
+makeRawEvent (ch, st, n, v) t = PM.PMEvent msg t
+  where msg = PM.encodeMsg $ PM.PMMsg (encodeChannel ch st) (n) (v)
+
+
+storeevents :: Output -> [MIDIEvent] -> IO (Maybe a)
+storeevents o evts = do
+  let buf = buffer o
+
+  (paramstate, cbuf) <- takeMVar buf
+  putMVar buf (paramstate, (cbuf ++ evts))
+  return Nothing
 
 
 -- MIDI Utils
@@ -333,66 +413,43 @@ encodeChannel ch cc = (((-) ch 1) .|. cc)
 
 
 -- MIDI Messages
-noteOn :: Output -> CLong -> CLong -> CLong -> MIDITime -> IO (Maybe a)
-noteOn o ch val vel t = do
-  let evt = (t, \t' -> makeEvent 0x90 val ch vel t')
-  sendEvent o evt
+noteOn :: CLong -> CLong -> CLong -> MIDITime -> [MIDIEvent]
+noteOn ch val vel t = [makeEvent 0x90 val ch vel t]
 
-noteOff :: Output -> CLong -> CLong -> MIDITime -> IO (Maybe a)
-noteOff o ch val t = do
-  let evt = (t, \t' -> makeEvent 0x80 val ch 60 t')
-  sendEvent o evt
+noteOff :: CLong -> CLong -> MIDITime -> [MIDIEvent]
+noteOff ch val t = [makeEvent 0x80 val ch 60 t]
 
-makeCtrl :: Output -> CLong -> ControlChange -> CLong -> MIDITime -> IO (Maybe a)
-makeCtrl o ch (CC {midi=midi, range=range}) n t = makeCC o ch (fromIntegral midi) n t
-makeCtrl o ch (NRPN {midi=midi, range=range}) n t = makeNRPN o ch (fromIntegral midi) n t
+makeCtrl :: CLong -> ControlChange -> CLong -> MIDITime -> [MIDIEvent]
+makeCtrl ch (CC {midi=midi, range=range}) n t = makeCC ch (fromIntegral midi) n t
+makeCtrl ch (NRPN {midi=midi, range=range}) n t = makeNRPN ch (fromIntegral midi) n t
 
--- This is sending CC
-makeCC :: Output -> CLong -> CLong -> CLong -> MIDITime -> IO (Maybe a)
-makeCC o ch c n t = do
-  let evt = (t, \t' -> makeEvent 0xB0 c ch n t')
-  sendEvent o evt
+makeCC :: CLong -> CLong -> CLong -> MIDITime -> [MIDIEvent]
+makeCC ch c n t = [makeEvent 0xB0 c ch n t]
 
--- This is sending NRPN
-makeNRPN :: Output -> CLong -> CLong -> CLong -> MIDITime -> IO (Maybe a)
-makeNRPN o ch c n t = do
-  let nrpn = makeEvent 0xB0
-      evts = [(t, (\t' -> nrpn 0x63 ch (shift (c .&. 0x3F80) (-7)) t')),
-              (t, (\t' -> nrpn 0x62 ch (c .&. 0x7F) t')),
-              (t, (\t' -> nrpn 0x06 ch (shift (n .&. 0x3F80) (-7)) t')),
-              (t, (\t' -> nrpn 0x26 ch (n .&. 0x7F) t'))
-             ]
-  mapM (sendEvent o) evts
-  return Nothing
+makeNRPN :: CLong -> CLong -> CLong -> MIDITime -> [MIDIEvent]
+makeNRPN ch c n t = [
+  nrpn 0x63 ch (shift (c .&. 0x3F80) (-7)) t,
+  nrpn 0x62 ch (c .&. 0x7F) t,
+  nrpn 0x06 ch (shift (n .&. 0x3F80) (-7)) t,
+  nrpn 0x26 ch (n .&. 0x7F) t
+  ]
+  where
+    nrpn = makeEvent 0xB0
 
 
--- Port Midi Wrapper
-
-outputDevice :: PM.DeviceID -> Int -> IO (Either Output PM.PMError)
-outputDevice deviceID latency = do
+-- Port Midi Device Wrapper
+outputDevice :: PM.DeviceID -> Int -> ControllerShape -> IO (Either Output PM.PMError)
+outputDevice deviceID latency shape = do
   PM.initialize
   now <- getCurrentTime
   result <- PM.openOutput deviceID latency
-  bs <- newMVar (0, 0, False)
+  bs <- newMVar (0, 0, Map.empty, False)
   case result of
     Left dev ->
       do
         info <- PM.getDeviceInfo deviceID
         putStrLn ("Opened: " ++ show (PM.interface info) ++ ": " ++ show (PM.name info))
-        buffer <- newMVar []
+        buffer <- newMVar (Map.empty, [])
 
-        return (Left Output { conn=dev, buffer=buffer, bufferstate=bs })
+        return (Left Output { cshape=shape, conn=dev, buffer=buffer, bufferstate=bs })
     Right err -> return (Right err)
-
-
-makeEvent :: CLong -> CLong -> CLong -> CLong -> CULong -> PM.PMEvent
-makeEvent st n ch v t = PM.PMEvent msg (t)
-  where msg = PM.encodeMsg $ PM.PMMsg (encodeChannel ch st) (n) (v)
-
-sendEvent :: Output -> (MIDITime, (CULong -> PM.PMEvent)) -> IO (Maybe a)
-sendEvent o evt = do
-  let buf = buffer o
-
-  cbuf <- takeMVar buf
-  putMVar buf (cbuf ++ [evt])
-  return Nothing
