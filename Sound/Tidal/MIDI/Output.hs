@@ -105,7 +105,8 @@ data Output = Output {
   cshape :: ControllerShape, -- ^ The ControllerShape defining which 'Param's will be available for use
   conn :: PM.PMStream, -- ^ The physical connection to the device, uses 'PortMidi'
   buffer :: MVar ([ParamMap], [MIDIEvent]), -- ^ A buffer of currently used 'Param's and their 'Value's as well as a list of 'MIDIEvent's to be sent on the next tick.
-  bufferstate :: MVar OutputState -- ^ Keeps track of connected virtual streams during one tick
+  bufferstate :: MVar OutputState, -- ^ Keeps track of connected virtual streams during one tick
+  midistart :: CULong -- ^ the MIDI time when this output was created
   }
 
 type MidiMap = Map.Map S.Param (Maybe Int)
@@ -522,6 +523,7 @@ makeNRPN ch c n t = [
 outputDevice :: PM.DeviceID -> Int -> ControllerShape -> IO (Either Output PM.PMError)
 outputDevice deviceID latency' shape = do
   _ <- PM.initialize
+  mstart <- PM.time
   result <- PM.openOutput deviceID latency'
   bs <- newMVar (0, 0, replicate 16 Map.empty, False)
   case result of
@@ -531,5 +533,5 @@ outputDevice deviceID latency' shape = do
         putStrLn ("Opened: " ++ show (PM.interface info) ++ ": " ++ show (PM.name info))
         b <- newMVar (replicate 16 Map.empty, [])
 
-        return (Left Output { cshape=shape, conn=dev, buffer=b, bufferstate=bs })
+        return (Left Output { cshape=shape, conn=dev, buffer=b, bufferstate=bs, midistart=mstart })
     Right err -> return (Right err)
