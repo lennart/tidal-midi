@@ -40,33 +40,33 @@ makeSeqTracks = []
 --         makeCC t s = (t * 16) + (s + 120)
 
 tetraController :: ControllerShape
-tetraController = ControllerShape { controls = ([
-                                  mrNRPN osc1freq_p 0 (0, 120) 0.2,
-                                  mrNRPN osc1detune_p 1 (0, 100) 0.5,
-                                  NRPN osc1shape_p 2 (0, 103) 1 passThru,
+tetraController = ControllerShape { controls = [
+                                  mrNRPN osc1freq_p 0 (0, 120),
+                                  mrNRPN osc1detune_p 1 (0, 100),
+                                  NRPN osc1shape_p 2 (0, 103) passThru,
                                   mNRPN osc1glide_p 3,
-                                  NRPN osc1kbd_p 4 (0, 1) 1 passThru,
+                                  NRPN osc1kbd_p 4 (0, 1) passThru,
 
-                                  mrNRPN osc2freq_p 5 (0, 120) 0.2,
-                                  mrNRPN osc2detune_p 6 (0, 100) 0.5,
-                                  NRPN osc2shape_p 7 (0, 103) 1 passThru,
+                                  mrNRPN osc2freq_p 5 (0, 120),
+                                  mrNRPN osc2detune_p 6 (0, 100),
+                                  NRPN osc2shape_p 7 (0, 103) passThru,
                                   mNRPN osc2glide_p 8,
-                                  NRPN osc2kbd_p 9 (0, 1) 1 passThru,
+                                  NRPN osc2kbd_p 9 (0, 1) passThru,
 
-                                  NRPN oscsync_p 10 (0, 1) 0 passThru,
-                                  NRPN glidemode_p 11 (0, 3) 0 passThru,
-                                  NRPN oscslop_p 12 (0, 5) 0 passThru,
-                                  mrNRPN oscmix_p 13 (0, 127) 0.5,
+                                  NRPN oscsync_p 10 (0, 1) passThru,
+                                  NRPN glidemode_p 11 (0, 3) passThru,
+                                  NRPN oscslop_p 12 (0, 5) passThru,
+                                  mrNRPN oscmix_p 13 (0, 127),
 
                                   mNRPN noise_p 14,
-                                  mrNRPN cutoff_p' 15 (0, 164) 1,
+                                  mrNRPN cutoff_p' 15 (0, 164),
                                   mNRPN resonance_p 16,
                                   mNRPN kamt_p 17,
                                   mNRPN audiomod_p 18,
-                                  NRPN fpoles_p 19 (0, 1) 1 passThru,
+                                  NRPN fpoles_p 19 (0, 1) passThru,
 
                                   -- filter envelope
-                                  mrNRPN famt_p 20 (0, 254) 0.5,
+                                  mrNRPN famt_p 20 (0, 254),
                                   mNRPN fvel_p 21,
                                   mNRPN fdel_p 22,
                                   mNRPN fatk_p 23,
@@ -79,44 +79,40 @@ tetraController = ControllerShape { controls = ([
                                   mNRPN pan_p 28,
                                   mNRPN gain_p 29, -- max volume by default
 
-                                  mrNRPN vamt_p 30 (0, 127) 1, -- max vca envelope amount
+                                  mrNRPN vamt_p 30 (0, 127), -- max vca envelope amount
                                   mNRPN vvel_p 31,
                                   mNRPN vdel_p 32,
                                   mNRPN attack_p' 33,
-                                  mrNRPN decay_p' 34 (0, 127) 0.5,
-                                  mrNRPN sustain_p' 35 (0, 127) 0.5,
+                                  mrNRPN decay_p' 34 (0, 127),
+                                  mrNRPN sustain_p' 35 (0, 127),
                                   mNRPN release_p' 36,
 
-                                  NRPN lfo1rate_p 37 (0, 166) 0 passThru, -- unsynced
-                                  -- mrNRPN lfo1step_p 37 (151, 166) 0, -- (bpm / 32) - 16 bpm-cycles
-                                  NRPN lfo1shape_p 38 (0, 4) 0 passThru,
+                                  NRPN lfo1rate_p 37 (0, 166) passThru,
+                                  NRPN lfo1shape_p 38 (0, 4) passThru,
                                   mNRPN lfo1amt_p 39,
-                                  NRPN lfo1dest_p 40 (0, 43) 0 passThru,
-                                  NRPN lfo1sync_p 41 (0, 1) 0 passThru,
+                                  NRPN lfo1dest_p 40 (0, 43) passThru,
+                                  NRPN lfo1sync_p 41 (0, 1) passThru,
 
-                                  NRPN lfo2rate_p 42 (0, 166) 0 passThru, -- unsynced
-                                  -- mrNRPN lfo2step_p 42 (151, 166) 0, -- (bpm / 32) - 16 bpm-cycles
-                                  NRPN lfo2shape_p 43 (0, 4) 0 passThru,
+                                  NRPN lfo2rate_p 42 (0, 166) passThru, -- unsynced
+                                  NRPN lfo2shape_p 43 (0, 4) passThru,
                                   mNRPN lfo2amt_p 44,
-                                  NRPN lfo2dest_p 45 (0, 43) 0 passThru,
-                                  NRPN lfo2sync_p 46 (0, 1) 0 passThru,
+                                  NRPN lfo2dest_p 45 (0, 43) passThru,
+                                  NRPN lfo2sync_p 46 (0, 1) passThru,
 
-                                  NRPN lfo3rate_p 47 (0, 166) 0 passThru, -- unsynced
-                                  -- mrNRPN lfo3step_p 47 (151, 166) 0, -- (bpm / 32) - 16 bpm-cycles
-                                  NRPN lfo3shape_p 48 (0, 4) 0 passThru,
+                                  NRPN lfo3rate_p 47 (0, 166) passThru, -- unsynced
+                                  NRPN lfo3shape_p 48 (0, 4) passThru,
                                   mNRPN lfo3amt_p 49,
-                                  NRPN lfo3dest_p 50 (0, 43) 0 passThru,
-                                  NRPN lfo3sync_p 51 (0, 1) 0 passThru,
+                                  NRPN lfo3dest_p 50 (0, 43) passThru,
+                                  NRPN lfo3sync_p 51 (0, 1) passThru,
 
-                                  NRPN lfo4rate_p 52 (0, 166) 0 passThru, -- unsynced
-                                  -- mrNRPN lfo4step_p 52 (151, 166) 0, -- (bpm / 32) - 16 bpm-cycles
-                                  NRPN lfo4shape_p 53 (0, 4) 0 passThru,
+                                  NRPN lfo4rate_p 52 (0, 166) passThru, -- unsynced
+                                  NRPN lfo4shape_p 53 (0, 4) passThru,
                                   mNRPN lfo4amt_p 54,
-                                  NRPN lfo4dest_p 55 (0, 43) 0 passThru,
-                                  NRPN lfo4sync_p 56 (0, 1) 0 passThru,
+                                  NRPN lfo4dest_p 55 (0, 43) passThru,
+                                  NRPN lfo4sync_p 56 (0, 1) passThru,
 
-                                  NRPN emod_p 57 (0, 43) 0 passThru,
-                                  mrNRPN eamt_p 58 (0, 254) 0.5,
+                                  NRPN emod_p 57 (0, 43) passThru,
+                                  mrNRPN eamt_p 58 (0, 254),
                                   mNRPN evel_p 59,
                                   mNRPN edel_p 60,
                                   mNRPN eatk_p 61,
@@ -124,70 +120,70 @@ tetraController = ControllerShape { controls = ([
                                   mNRPN esus_p 63,
                                   mNRPN erel_p 64,
 
-                                  NRPN mod1src_p 65 (0, 20) 0 passThru,
-                                  mrNRPN mod1amt_p 66 (0, 254) 0.5,
-                                  NRPN mod1dst_p 67 (0, 47) 0 passThru,
+                                  NRPN mod1src_p 65 (0, 20) passThru,
+                                  mrNRPN mod1amt_p 66 (0, 254),
+                                  NRPN mod1dst_p 67 (0, 47) passThru,
 
-                                  NRPN mod2src_p 68 (0, 20) 0 passThru,
-                                  mrNRPN mod2amt_p 69 (0, 254) 0.5,
-                                  NRPN mod2dst_p 70 (0, 47) 0 passThru,
+                                  NRPN mod2src_p 68 (0, 20) passThru,
+                                  mrNRPN mod2amt_p 69 (0, 254),
+                                  NRPN mod2dst_p 70 (0, 47) passThru,
 
-                                  NRPN mod3src_p 71 (0, 20) 0 passThru,
-                                  mrNRPN mod3amt_p 72 (0, 254) 0.5,
-                                  NRPN mod3dst_p 73 (0, 47) 0 passThru,
+                                  NRPN mod3src_p 71 (0, 20) passThru,
+                                  mrNRPN mod3amt_p 72 (0, 254),
+                                  NRPN mod3dst_p 73 (0, 47) passThru,
 
-                                  NRPN mod4src_p 74 (0, 20) 0 passThru,
-                                  mrNRPN mod4amt_p 75 (0, 254) 0.5,
-                                  NRPN mod4dst_p 76 (0, 47) 0 passThru,
+                                  NRPN mod4src_p 74 (0, 20) passThru,
+                                  mrNRPN mod4amt_p 75 (0, 254),
+                                  NRPN mod4dst_p 76 (0, 47) passThru,
 
-                                  NRPN seq1dst_p 77 (0, 47) 0 passThru,
-                                  NRPN seq2dst_p 78 (0, 47) 0 passThru,
-                                  NRPN seq3dst_p 79 (0, 47) 0 passThru,
-                                  NRPN seq4dst_p 80 (0, 47) 0 passThru,
+                                  NRPN seq1dst_p 77 (0, 47) passThru,
+                                  NRPN seq2dst_p 78 (0, 47) passThru,
+                                  NRPN seq3dst_p 79 (0, 47) passThru,
+                                  NRPN seq4dst_p 80 (0, 47) passThru,
 
-                                  mrNRPN mwhl_p 81 (0, 254) 0.5,
-                                  NRPN mwhldst_p 82 (0, 47) 0 passThru,
+                                  mrNRPN mwhl_p 81 (0, 254),
+                                  NRPN mwhldst_p 82 (0, 47) passThru,
 
-                                  mrNRPN aftt_p 83 (0, 254) 0.5,
-                                  NRPN afttdst_p 84 (0, 47) 0 passThru,
+                                  mrNRPN aftt_p 83 (0, 254),
+                                  NRPN afttdst_p 84 (0, 47) passThru,
 
-                                  mrNRPN breath_p 85 (0, 254) 0.5,
-                                  NRPN breathdst_p 86 (0, 47) 0 passThru,
+                                  mrNRPN breath_p 85 (0, 254),
+                                  NRPN breathdst_p 86 (0, 47) passThru,
 
-                                  mrNRPN mvel_p 87 (0, 254) 0.5,
-                                  NRPN mveldst_p 88 (0, 47) 0 passThru,
+                                  mrNRPN mvel_p 87 (0, 254),
+                                  NRPN mveldst_p 88 (0, 47) passThru,
 
-                                  mrNRPN foot_p 89 (0, 254) 0.5,
-                                  NRPN footdst_p 90 (0, 47) 0 passThru,
+                                  mrNRPN foot_p 89 (0, 254),
+                                  NRPN footdst_p 90 (0, 47) passThru,
 
-                                  NRPN kbpm_p 91 (30, 250) 0 passThru,
-                                  NRPN clockdiv_p 92 (0, 12) 0 passThru, -- TODO: document values
+                                  NRPN kbpm_p 91 (30, 250) passThru,
+                                  NRPN clockdiv_p 92 (0, 12) passThru, -- TODO: document values
 
-                                  NRPN bendrng_p 93 (0, 12) 0 passThru,
+                                  NRPN bendrng_p 93 (0, 12) passThru,
 
-                                  NRPN sqntrig_p 94 (0, 4) 0 passThru, -- TODO: document values
-                                  NRPN unisonkey_p 95 (0, 5) 0 passThru, -- TODO: document values
-                                  NRPN unisonmode_p 96 (0, 4) 0 passThru, -- TODO: document values
-                                  NRPN arpmode_p 97 (0, 14) 0 passThru,
+                                  NRPN sqntrig_p 94 (0, 4) passThru, -- TODO: document values
+                                  NRPN unisonkey_p 95 (0, 5) passThru, -- TODO: document values
+                                  NRPN unisonmode_p 96 (0, 4) passThru, -- TODO: document values
+                                  NRPN arpmode_p 97 (0, 14) passThru,
 
-                                  NRPN erepeat_p 98 (0, 1) 0 passThru,
-                                  NRPN unison_p 99 (0, 1) 0 passThru,
+                                  NRPN erepeat_p 98 (0, 1) passThru,
+                                  NRPN unison_p 99 (0, 1) passThru,
 
 
-                                  NRPN arp_p 100 (0, 1) 0 passThru,
-                                  NRPN sqn_p 101 (0, 1) 0 passThru,
+                                  NRPN arp_p 100 (0, 1) passThru,
+                                  NRPN sqn_p 101 (0, 1) passThru,
 
-                                  NRPN mcr1_p 105 (0, 183) 0 passThru,
-                                  NRPN mcr2_p 106 (0, 183) 0 passThru,
-                                  NRPN mcr3_p 107 (0, 183) 0 passThru,
-                                  NRPN mcr4_p 108 (0, 183) 0 passThru,
+                                  NRPN mcr1_p 105 (0, 183) passThru,
+                                  NRPN mcr2_p 106 (0, 183) passThru,
+                                  NRPN mcr3_p 107 (0, 183) passThru,
+                                  NRPN mcr4_p 108 (0, 183) passThru,
 
                                   
                                   mNRPN shape_p 110,
 
-                                  mrNRPN btnfreq_p 111 (0, 127) 0.25,
-                                  mrNRPN btnvel_p 112 (0, 127) 1,
-                                  NRPN btnmode_p 113 (0, 1) 0 passThru,
+                                  mrNRPN btnfreq_p 111 (0, 127),
+                                  mrNRPN btnvel_p 112 (0, 127),
+                                  NRPN btnmode_p 113 (0, 1) passThru,
 
                                   mNRPN pitch1_p 114,
                                   mNRPN pitch2_p 115,
@@ -196,13 +192,14 @@ tetraController = ControllerShape { controls = ([
 
                                   -- left out: editor byte,
 
-                                  mrNRPN ksplitpoint_p 118 (0, 127) 0.5,
-                                  NRPN kmode_p 119 (0, 2) 0 passThru, -- TODO: document values
+                                  mrNRPN ksplitpoint_p 118 (0, 127),
+                                  -- each patch has layer a/b
+                                  NRPN kmode_p 119 (0, 2) passThru, -- 0: normal, 1: stack, both layers respond to full key range, 2: split at ksplitpoint
                                   mCC notesoff_p 123,
                                   mCC ccreset_p 121,
                                   mCC damp_p 64
 
-                          ] ++ makeSeqTracks),
+                          ] ++ makeSeqTracks,
                          latency = 0.2
                        }
 
@@ -213,13 +210,13 @@ tetra = toShape tetraController
 (damp, damp_p) = pF "damp" (Just (-1))
 
 
-(osc1freq, osc1freq_p)      = pF "osc1freq" (Just 0)
+(osc1freq, osc1freq_p)      = pF "osc1freq" (Just 0.2)
 (osc1detune, osc1detune_p)      = pF "osc1detune" (Just 0.5)
 (osc1shape, osc1shape_p)     = pI "osc1shape" (Just 1)
 (osc1glide, osc1glide_p)     = pF "osc1glide" (Just 0)
 (osc1kbd, osc1kbd_p)     = pI "osc1kbd" (Just 1)
 
-(osc2freq, osc2freq_p)      = pF "osc2freq" (Just 0)
+(osc2freq, osc2freq_p)      = pF "osc2freq" (Just 0.2)
 (osc2detune, osc2detune_p)      = pF "osc2detune" (Just 0.5)
 (osc2shape, osc2shape_p)     = pI "osc2shape" (Just 1)
 (osc2glide, osc2glide_p)     = pF "osc2glide" (Just 0)
@@ -234,11 +231,11 @@ tetra = toShape tetraController
 
 (kamt, kamt_p)      = pF "kamt" (Just 0.5)
 
-(_, cutoff_p') = pF "cutoff" (Just 0.01)
+(_, cutoff_p') = pF "cutoff" (Just 1)
 (_, attack_p') = pF "attack" (Just 0.12)
 (_, release_p') = pF "release" (Just 0.01)
 (_, decay_p') = pF "decay" (Just 0.5)
-(_, sustain_p') = pF "sustain" (Just 0)
+(_, sustain_p') = pF "sustain" (Just 0.5)
 
 (audiomod, audiomod_p)      = pF "audiomod" (Just 0)
 (fpoles, fpoles_p)      = pI "fpoles" (Just 0)
@@ -260,41 +257,33 @@ fourpole        = fpoles (p "1")
 (vamt, vamt_p)      = pF "vamt" (Just 1)
 (vvel, vvel_p)      = pF "vvel" (Just 0)
 (vdel, vdel_p)      = pF "vdel" (Just 0)
--- (vatk, vatk_p)      = pF "vatk" (Just 0)
--- (vdcy, vdcy_p)      = pF "vdcy" (Just 0)
--- (vsus, vsus_p)      = pF "vsus" (Just 0)
--- (vrel, vrel_p)      = pF "vrel" (Just 0)
 
 (lfo1rate, lfo1rate_p)      = pF "lfo1rate" (Just 0)
--- lfo1step, -- lfo1step_p)      = pF "lfo1step" (Just 0)
 (lfo1shape, lfo1shape_p)     = pI "lfo1shape" (Just 0)
 (lfo1amt, lfo1amt_p)     = pF "lfo1amt" (Just 0)
 (lfo1dest, lfo1dest_p)      = pF "lfo1dest" (Just 0)
 (lfo1sync, lfo1sync_p)      = pI "lfo1sync" (Just 0)
 
 (lfo2rate, lfo2rate_p)      = pF "lfo2rate" (Just 0)
--- lfo2step, -- lfo2step_p)      = pF "lfo2step" (Just 0)
 (lfo2shape, lfo2shape_p)     = pI "lfo2shape" (Just 0)
 (lfo2amt, lfo2amt_p)     = pF "lfo2amt" (Just 0)
 (lfo2dest, lfo2dest_p)      = pF "lfo2dest" (Just 0)
 (lfo2sync, lfo2sync_p)      = pI "lfo2sync" (Just 0)
 
 (lfo3rate, lfo3rate_p)      = pF "lfo3rate" (Just 0)
--- lfo3step, -- lfo3step_p)      = pF "lfo3step" (Just 0)
 (lfo3shape, lfo3shape_p)     = pI "lfo3shape" (Just 0)
 (lfo3amt, lfo3amt_p)     = pF "lfo3amt" (Just 0)
 (lfo3dest, lfo3dest_p)      = pF "lfo3dest" (Just 0)
 (lfo3sync, lfo3sync_p)      = pI "lfo3sync" (Just 0)
 
 (lfo4rate, lfo4rate_p)      = pF "lfo4rate" (Just 0)
--- lfo4step, -- lfo4step_p)      = pF "lfo4step" (Just 0)
 (lfo4shape, lfo4shape_p)     = pI "lfo4shape" (Just 0)
 (lfo4amt, lfo4amt_p)     = pF "lfo4amt" (Just 0)
 (lfo4dest, lfo4dest_p)      = pF "lfo4dest" (Just 0)
 (lfo4sync, lfo4sync_p)      = pI "lfo4sync" (Just 0)
 
 (emod, emod_p)      = pF "emod" (Just 0)
-(eamt, eamt_p)      = pF "eamt" (Just 0)
+(eamt, eamt_p)      = pF "eamt" (Just 0.5)
 (evel, evel_p)      = pF "evel" (Just 0)
 (edel, edel_p)      = pF "edel" (Just 0)
 (eatk, eatk_p)      = pF "eatk" (Just 0.01)
@@ -303,19 +292,19 @@ fourpole        = fpoles (p "1")
 (erel, erel_p)      = pF "erel" (Just 0.01)
 
 (mod1src, mod1src_p)     = pF "mod1src" (Just 0)
-(mod1amt, mod1amt_p)     = pF "mod1amt" (Just 0)
+(mod1amt, mod1amt_p)     = pF "mod1amt" (Just 0.5)
 (mod1dst, mod1dst_p)     = pF "mod1dst" (Just 0)
 
 (mod2src, mod2src_p)     = pF "mod2src" (Just 0)
-(mod2amt, mod2amt_p)     = pF "mod2amt" (Just 0)
+(mod2amt, mod2amt_p)     = pF "mod2amt" (Just 0.5)
 (mod2dst, mod2dst_p)     = pF "mod2dst" (Just 0)
 
 (mod3src, mod3src_p)     = pF "mod3src" (Just 0)
-(mod3amt, mod3amt_p)     = pF "mod3amt" (Just 0)
+(mod3amt, mod3amt_p)     = pF "mod3amt" (Just 0.5)
 (mod3dst, mod3dst_p)     = pF "mod3dst" (Just 0)
 
 (mod4src, mod4src_p)     = pF "mod4src" (Just 0)
-(mod4amt, mod4amt_p)     = pF "mod4amt" (Just 0)
+(mod4amt, mod4amt_p)     = pF "mod4amt" (Just 0.5)
 (mod4dst, mod4dst_p)     = pF "mod4dst" (Just 0)
 
 (seq1dst, seq1dst_p)     = pF "seq1dst" (Just 0)
@@ -324,19 +313,19 @@ fourpole        = fpoles (p "1")
 (seq4dst, seq4dst_p)     = pF "seq4dst" (Just 0)
 
 
-(mwhl, mwhl_p)    = pF "mwhl" (Just 0)
+(mwhl, mwhl_p)    = pF "mwhl" (Just 0.5)
 (mwhldst, mwhldst_p) = pI "mwhldst" (Just 0)
 
-(aftt, aftt_p)    = pF "aftt" (Just 0)
+(aftt, aftt_p)    = pF "aftt" (Just 0.5)
 (afttdst, afttdst_p) = pI "afttdst" (Just 0)
 
-(breath, breath_p)    = pF "breath" (Just 0)
+(breath, breath_p)    = pF "breath" (Just 0.5)
 (breathdst, breathdst_p) = pI "breathdst" (Just 0)
 
-(mvel, mvel_p)    = pF "mvel" (Just 0)
+(mvel, mvel_p)    = pF "mvel" (Just 0.5)
 (mveldst, mveldst_p) = pI "mveldst" (Just 0)
 
-(foot, foot_p)    = pF "foot" (Just 0)
+(foot, foot_p)    = pF "foot" (Just 0.5)
 (footdst, footdst_p) = pI "footdst" (Just 0)
 
 (bendrng, bendrng_p) = pI "bendrng" (Just 0)
@@ -365,8 +354,8 @@ fourpole        = fpoles (p "1")
 (mcr3, mcr3_p)      = pI "mcr3" (Just 0)
 (mcr4, mcr4_p)      = pI "mcr4" (Just 0)
 
-(btnfreq, btnfreq_p)     = pF "btnfreq" (Just 0)
-(btnvel, btnvel_p)      = pF "btnvel" (Just 0)
+(btnfreq, btnfreq_p)     = pF "btnfreq" (Just 0.25)
+(btnvel, btnvel_p)      = pF "btnvel" (Just 1)
 (btnmode, btnmode_p)     = pF "btnmode" (Just 0)
 
 (sub1vol, sub1vol_p)     = pF "sub1vol" (Just 0)
@@ -374,7 +363,7 @@ fourpole        = fpoles (p "1")
 
 (fbvol, fbvol_p)     = pF "fbvol" (Just 0)
 
-(ksplitpoint, ksplitpoint_p)     = pF "ksplitpoint" (Just 0)
+(ksplitpoint, ksplitpoint_p)     = pF "ksplitpoint" (Just 0.5)
 (kmode, kmode_p)     = pF "kmode" (Just 0)
 knormal         = kmode (p "0")
 kstack          = kmode (p "0.5")
@@ -398,8 +387,8 @@ lfosaw = doublePattern 2
 lfopulse = doublePattern 3
 lforand = doublePattern 4
 
-lrate r = ((min 150) . (max 0)) <$> p r
-lstep s = ((min 166) . (max 151) . (+150)) <$> p s
+lrate r = min 150 . max 0 <$> p r
+lstep s = min 166 . max 151 . (+150) <$> p s
 
 lfo1 s d r a = lfo1shape s |+| lfo1dest d |+| lfo1rate r |+| lfo1amt a
 lfo2 s d r a = lfo2shape s |+| lfo2dest d |+| lfo2rate r |+| lfo2amt a
