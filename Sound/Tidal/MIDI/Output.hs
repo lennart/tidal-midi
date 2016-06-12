@@ -106,7 +106,8 @@ data Output = Output {
   conn :: PM.PMStream, -- ^ The physical connection to the device, uses 'PortMidi'
   buffer :: MVar ([ParamMap], [MIDIEvent]), -- ^ A buffer of currently used 'Param's and their 'Value's as well as a list of 'MIDIEvent's to be sent on the next tick.
   bufferstate :: MVar OutputState, -- ^ Keeps track of connected virtual streams during one tick
-  midistart :: CULong -- ^ the MIDI time when this output was created
+  midistart :: CULong, -- ^ the MIDI time when this output was created
+  rstart :: UTCTime -- ^ the real time when this output was created
   }
 
 type MidiMap = Map.Map S.Param (Maybe Int)
@@ -205,7 +206,7 @@ sendevents s shape change ticks evts resets = do
       -- split into events sent now and later (e.g. a noteOff that would otherwise cut off noteOn's in the next tick)
       (evts', later) = span ((< nextTick).(\(_,o,_) -> o)) $ sortBy (comparing (\(_,o,_) -> o)) onsets
       -- calculate MIDI time to schedule events, putting time into fn to create PM.PMEvents
-      evts'' = map (\(t, o, e) -> let midionset = scheduleTime midiTime now o
+      evts'' = map (\(t, o, e) -> let midionset = scheduleTime (midistart s, rstart s) o
                                   in (midionset, t, o, makeRawEvent e midionset)) evts'
       -- a list CC `names` that need to be reset
       resetccs = map (\(_, _, (_, _, d1, _)) -> d1) resetevts
@@ -220,7 +221,7 @@ sendevents s shape change ticks evts resets = do
           --      1cI. use the default passed in midionset for resets
           --      1cII. append `resets` to `evts` FIXME: make sure we really do by timing
           --      1cIII. send `evts`
-          Nothing -> (evts'' ++ map (\(t, o, e) -> let midionset = scheduleTime midiTime now o
+          Nothing -> (evts'' ++ map (\(t, o, e) -> let midionset = scheduleTime (midistart s, rstart s) o
                                                    in (midionset, t, o, makeRawEvent e midionset)) resetevts, later')
           -- 1b. only `evts` contain a CC to be reset
           --      1bI. set scheduletime for reset __after__ the latest CC that needs to be reset in `evts`
@@ -229,11 +230,11 @@ sendevents s shape change ticks evts resets = do
           Just (_, latestO, _) -> (before ++
                                       map (
                                           \(t, o, e) ->
-                                          let midionset = scheduleTime midiTime now latestO
+                                          let midionset = scheduleTime (midistart s, rstart s) latestO
                                           in (midionset, t,o,makeRawEvent e midionset)
                                           ) resetevts ++ after, later')
             where
-              (before, after) = partition (\(m,_,o,_) -> m > scheduleTime midiTime now o) evts''
+              (before, after) = partition (\(m,_,o,_) -> m > scheduleTime (midistart s, rstart s) o) evts''
 
         -- 1a. `later` contains a cc to be reset, (omit searching in evts)
         --      1aI. set scheduletime for reset __after__ the latest CC that needs to be reset in `later`
@@ -244,7 +245,7 @@ sendevents s shape change ticks evts resets = do
       -- filter events that are too late
       late = map (toDescriptor midiTime now) $ filter (\(_,_,t,_) -> t < realToFrac (utcTimeToPOSIXSeconds now)) evtstosend
 
-  -- write events for this tick to stream  
+  -- write events for this tick to stream
   err <- PM.writeEvents output evtstosend'
   putStrLn $ unlines $ zipWith (++) (replicate (length evtstosend) (show midiTime ++ " " ++ show (realToFrac (utcTimeToPOSIXSeconds now)))) (map showRawEvent evtstosend)
   case err of
@@ -381,13 +382,12 @@ useOutput outsM displayname controllershape = do
 
 
 -- | Turn logicalOnset into MIDITime
-scheduleTime :: CULong -> UTCTime -> Double -> CULong
-scheduleTime mnow' now' logicalOnset = t
+scheduleTime :: (CULong, UTCTime)-> Double -> CULong
+scheduleTime (mstart', rstart') logicalOnset = (+) mstart $ floor $ 1000 * (logicalOnset - rstart'')
   where
-    now = realToFrac $ utcTimeToPOSIXSeconds now'
-    mnow = fromIntegral mnow' -- FIXME: miditime is not as precise as _real time_, therefore the computation below will be inaccurate if mnow might be...Idon't know but somehow this calculation is not based on correct values, whereas now should be trusted, logicalOnset is correct so only mnow can be wrong,right?
-    t = floor $ mnow + (1000 * (logicalOnset - now)) -- 1 second are 1000 microseconds as is the unit of timestamps in PortMidi
-
+    rstart'' = realToFrac $ utcTimeToPOSIXSeconds rstart'
+    mstart = fromIntegral mstart'
+    
 -- Converters
 
 {-|
@@ -523,15 +523,16 @@ makeNRPN ch c n t = [
 outputDevice :: PM.DeviceID -> Int -> ControllerShape -> IO (Either Output PM.PMError)
 outputDevice deviceID latency' shape = do
   _ <- PM.initialize
-  mstart <- PM.time
   result <- PM.openOutput deviceID latency'
   bs <- newMVar (0, 0, replicate 16 Map.empty, False)
   case result of
     Left dev ->
       do
         info <- PM.getDeviceInfo deviceID
+        time <- getCurrentTime        
+        mstart <- PM.time        
         putStrLn ("Opened: " ++ show (PM.interface info) ++ ": " ++ show (PM.name info))
         b <- newMVar (replicate 16 Map.empty, [])
 
-        return (Left Output { cshape=shape, conn=dev, buffer=b, bufferstate=bs, midistart=mstart })
+        return (Left Output { cshape=shape, conn=dev, buffer=b, bufferstate=bs, midistart=mstart, rstart=time })
     Right err -> return (Right err)
