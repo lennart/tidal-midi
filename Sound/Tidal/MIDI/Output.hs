@@ -155,9 +155,12 @@ flushBackend o shape change ticks = do
       -- mixing order of ctrl messages, and resets get override
       -- FIXME: when schedulin, note late CC messages and DROP THEM, otherwise everything is screwed
       let offset = S.latency shape
-          mididiffs = map (toMidiMap (cshape o)) diffs
+--          mididiffs = map (toMidiMap (cshape o)) diffs
+          mididiffs = map ((toMidiMap (cshape o)).(stripShape (toShape $ cshape o))) $ diffs          
+--          resetevents = [] :: [MIDIEvent] --
           resetevents = concat $ zipWith (\x y -> makectrls o x (change,ticks,1,offset) y) [1..] mididiffs
 
+--      putStrLn $ show mididiffs
       maybe (pure ()) putStrLn (case length resetevents of
                                    0 -> Nothing
                                    _ -> Just $ show resetevents)
@@ -276,8 +279,10 @@ mkStore channel s = return $ \ shape change tick (on,off,m) -> do
                             ctrls' = stripDefaults ctrls
                             ctrls'' = toMidiMap (cshape s) <$> ctrls'
                             store' = store s channel change tick on off <$> ctrls''
-
-                        fmap ($) (storeParams s channel <$> stripDefaults (applyShape' shape m)) <*> (($) <$> store' <*> props)
+                        -- store even non-midi params, otherwise removing last ctrl results in a missing reset since diff in `flushBackend` would be empty
+                        -- then buffer ctrl messages to be sent
+                        -- with the appropriate note properties
+                        ($) <$> (storeParams s channel <$> stripDefaults (applyShape' shape m)) <*> (($) <$> store' <*> props)
 
 
 -- | Union the currently stored paramstate for certain channel with the given one
@@ -408,9 +413,15 @@ toMidiValue _ _ (VS _) = Nothing -- ignore strings for now, we might 'read' them
 toMidiMap :: ControllerShape -> S.ParamMap -> MidiMap
 toMidiMap s m = Map.mapWithKey (toMidiValue s) (Map.mapMaybe id m)
 
--- | Keep only params that are in a given shape
+-- | Keep only params that are in a given shape, replace missing with defaults
 cutShape :: S.Shape -> ParamMap -> Maybe ParamMap
 cutShape s m = flip Map.intersection (S.defaultMap s) <$> S.applyShape' s m
+
+-- | Keep only params that are in a given shape
+stripShape :: S.Shape -> ParamMap -> ParamMap
+stripShape s = Map.intersection p'
+  where
+    p' = S.defaultMap s
 
 -- | Keep only params that are explicitly set (i.e. not default)
 stripDefaults :: Maybe ParamMap -> Maybe ParamMap
