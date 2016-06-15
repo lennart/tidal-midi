@@ -152,18 +152,12 @@ flushBackend o shape change ticks = do
           diffs = map mapDefaults $ zipWith Map.difference oldstates newstates
       -- store additional "reset" events in buffer
       -- schedule time must be exactly before/ontime with the next regular event to be sent. otherwise we risk
-      -- mixing order of ctrl messages, and resets get override
-      -- FIXME: when schedulin, note late CC messages and DROP THEM, otherwise everything is screwed
+      -- mixing order of ctrl messages, and resets get overridden
+      -- FIXME: when scheduling, note late CC messages and DROP THEM, otherwise everything is screwed
       let offset = S.latency shape
---          mididiffs = map (toMidiMap (cshape o)) diffs
           mididiffs = map ((toMidiMap (cshape o)).(stripShape (toShape $ cshape o))) $ diffs          
---          resetevents = [] :: [MIDIEvent] --
           resetevents = concat $ zipWith (\x y -> makectrls o x (change,ticks,1,offset) y) [1..] mididiffs
 
---      putStrLn $ show mididiffs
-      maybe (pure ()) putStrLn (case length resetevents of
-                                   0 -> Nothing
-                                   _ -> Just $ show resetevents)
       -- send out MIDI events
       (late, later) <- sendevents o shape change ticks events resetevents
       -- finally clear buffered ParamMap for next tick
@@ -203,14 +197,15 @@ sendevents s shape change ticks evts resets = do
   now <- getCurrentTime
   let offset = S.latency shape
       nextTick = logicalOnset' change (ticks+1) 0 offset
+      mkEvent (t, o, e) = (midionset, t, o, makeRawEvent e midionset)
+        where midionset = scheduleTime (midistart s, rstart s) o     
       onsets = map calcOnsets evts
       -- calculate temporary scheduling for resetevts
       resetevts = map calcOnsets resets
       -- split into events sent now and later (e.g. a noteOff that would otherwise cut off noteOn's in the next tick)
       (evts', later) = span ((< nextTick).(\(_,o,_) -> o)) $ sortBy (comparing (\(_,o,_) -> o)) onsets
       -- calculate MIDI time to schedule events, putting time into fn to create PM.PMEvents
-      evts'' = map (\(t, o, e) -> let midionset = scheduleTime (midistart s, rstart s) o
-                                  in (midionset, t, o, makeRawEvent e midionset)) evts'
+      evts'' = map mkEvent evts'
       -- a list CC `names` that need to be reset
       resetccs = map (\(_, _, (_, _, d1, _)) -> d1) resetevts
       later' = map (\(t,_,e) -> (t,e)) later
@@ -224,8 +219,7 @@ sendevents s shape change ticks evts resets = do
           --      1cI. use the default passed in midionset for resets
           --      1cII. append `resets` to `evts` FIXME: make sure we really do by timing
           --      1cIII. send `evts`
-          Nothing -> (evts'' ++ map (\(t, o, e) -> let midionset = scheduleTime (midistart s, rstart s) o
-                                                   in (midionset, t, o, makeRawEvent e midionset)) resetevts, later')
+          Nothing -> (evts'' ++ map mkEvent resetevts, later')
           -- 1b. only `evts` contain a CC to be reset
           --      1bI. set scheduletime for reset __after__ the latest CC that needs to be reset in `evts`
           --      1bII. add `resets` to `evts`
@@ -247,17 +241,24 @@ sendevents s shape change ticks evts resets = do
       evtstosend' = map (\(_,_,_,e) -> e) evtstosend
       -- filter events that are too late
       late = map (toDescriptor midiTime now) $ filter (\(_,_,t,_) -> t < realToFrac (utcTimeToPOSIXSeconds now)) evtstosend
-
+      -- drop late CC events to avoid glitches
+--      evtstosend'' = map (\(_,_,e,_,_) -> e) $ filter (not.isCC) late
   -- write events for this tick to stream
   err <- PM.writeEvents output evtstosend'
-  putStrLn $ unlines $ zipWith (++) (replicate (length evtstosend) (show midiTime ++ " " ++ show (realToFrac (utcTimeToPOSIXSeconds now)))) (map showRawEvent evtstosend)
+
   case err of
    PM.NoError -> return (late, laterevts)  -- return events for logging in outer scope
    e -> do
      putStrLn ("sending failed: " ++ show e)
      return (late, laterevts)
 
+isCC :: SentEvent -> Bool
+isCC (_,_,e,_,_) = (0x0f .&. cc) == 0xB0
+  where
+    cc = PM.status $ PM.decodeMsg $ PM.message $ e
 
+
+    
 -- | Buffer a single tick's MIDI events for a single channel of a single connection 
 store :: Output -> Int -> Tempo -> Tick -> Onset -> Offset -> MidiMap -> ParamMap -> IO ()
 store s ch change tick on off ctrls note = storemidi s ch' note' (change, tick, on, offset) ctrls
@@ -464,7 +465,6 @@ storeevents :: Output -> [MIDIEvent] -> IO (Maybe a)
 storeevents o evts = do
   let buf = buffer o
   (paramstate, cbuf) <- takeMVar buf
---  putStrLn $ unlines $ map show evts
   putMVar buf (paramstate, cbuf ++ evts)
   return Nothing
 

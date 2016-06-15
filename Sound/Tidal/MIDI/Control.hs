@@ -91,7 +91,7 @@ computeTiming tempo duration m = ((n', v', d'), nudge')
     n' = S.ivalue $  note' Map.! n_p
     d' = case unit' of
       "rate" -> byRate
-      "cycle" -> (/) duration $ realToFrac $ cps tempo
+      "cycle" -> (+) (-0.001) $ (/) duration $ realToFrac $ cps tempo
       _ -> byRate
     byRate = realToFrac $ S.fvalue $ note' Map.! dur_p
 
