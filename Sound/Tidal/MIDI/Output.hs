@@ -274,12 +274,12 @@ splits the given @ParamMap@ into MIDI note information
 and CCs.
 -}
 mkStore :: Int -> Output -> IO ToMessageFunc
-mkStore channel s = return $ \ shape change tick (on,off,m) -> do
+mkStore channel s = return $ \ shape change tick (on,m) -> do
                         let ctrls = cutShape shape m
                             props = cutShape midiShape m
                             ctrls' = stripDefaults ctrls
                             ctrls'' = toMidiMap (cshape s) <$> ctrls'
-                            store' = store s channel change tick on off <$> ctrls''
+                            store' = store s channel change tick on on <$> ctrls''
                         -- store even non-midi params, otherwise removing last ctrl results in a missing reset since diff in `flushBackend` would be empty
                         -- then buffer ctrl messages to be sent
                         -- with the appropriate note properties
